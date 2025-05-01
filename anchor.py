@@ -7,13 +7,32 @@ import numpy as np
 import math
 
 class DataEncoder:
+    """
+    Anchor-based encoder for object detection tasks.
+
+    This class generates anchor boxes based on the input image size and predefined anchor settings.
+    It encodes ground truth bounding boxes and class labels into regression and classification targets
+    that can be used for training object detection models.
+
+    Example:
+        encoder = DataEncoder(input_size=(450, 450), classes=[0,1])
+        loc_target, cls_target = encoder.encoder(gt_boxes, gt_labels)
+
+    Parameters:
+        input_size (tuple): Size of the input image (height, width).
+        classes (list): List of class names, e.g., ['person', 'car', 'dog'].
+        anchor_ratio (list, optional): Aspect ratios for anchors (width/height). Default is [0.5, 1, 1.5].
+        anchor_areas (list, optional): Areas of anchor boxes for each feature map level. Default is [208*208, 104*104, 26*26].
+        fm_lst (list, optional): List of feature map sizes corresponding to each anchor area. Default is [13, 26, 52].
+        scale (list, optional): List of scale multipliers for anchor sizes. Default is [1].
+    """
     def __init__(self, 
-                 input_size,
-                 classes,
-                 anchor_ratio = [0.5, 1, 1.5],
-                 anchor_areas = [208*208,104*104,26*26],
-                 fm_lst = [13,26,52],
-                 scale = [1],
+                 input_size:tuple,
+                 classes:list,
+                 anchor_ratio:list = [0.5, 1, 1.5],
+                 anchor_areas:list = [208*208,104*104,26*26],
+                 fm_lst:list = [13,26,52],
+                 scale:list = [1],
                  ):
         self.input_size = input_size
         self.anchor_areas = anchor_areas
