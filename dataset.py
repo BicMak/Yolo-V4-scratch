@@ -69,25 +69,24 @@ class ListDataset(Dataset):
           cls_targets: (tensor) class label targets.
         '''
         # Load image and boxes.
-        path = os.path.join(self.image_dir, self.img_lst[idx])
-        img = cv2.imread(path)
-        if img is None or np.prod(img.shape) == 0:
-            print('cannot load image from path: ', path)
-            sys.exit(-1)
+        img = self.get_image(idx)
 
-        img = img[..., ::-1]
         boxes = self.boxes[idx]
         labels = self.labels[idx]
 
         result = self.basic_aug(image=img,bboxes=boxes,class_labels=labels)
-        print( type(result))
 
         if self.Transform:
             result = self.mix_augmentation(idx,result)
-        
+        print(result['image'].dtype)
         result = self.finish_aug(image=result['image'],bboxes=result['bboxes'],class_labels=result['class_labels'])
-
-        return {"image":result['image'], "bboxes":result['bboxes'], "class_label":result['class_labels']}
+        
+        #change the list to torch tensor
+        return {
+            "image":result['image'], 
+            "bboxes":torch.tensor(result['bboxes'],dtype=torch.float32), 
+            "class_labels":torch.tensor(result['class_labels'],dtype=torch.float32)
+            }
     
     def add_agumentation(self,
                          basic_aug:A,
@@ -107,26 +106,57 @@ class ListDataset(Dataset):
         idx_2,idx_3,idx_4 = np.random.choice(remaining_indices, size=3, replace=False)
 
         auged_set2 = self.basic_aug(image=self.get_image(idx_2),bboxes=self.boxes[idx_2],class_labels=self.labels[idx_2])
+        auged_set3 = self.basic_aug(image=self.get_image(idx_3),bboxes=self.boxes[idx_3],class_labels=self.labels[idx_3])
+        auged_set4 = self.basic_aug(image=self.get_image(idx_4),bboxes=self.boxes[idx_4],class_labels=self.labels[idx_4])
 
+        #delate over bboxes in image
+        for auged_set in [auged_set1,auged_set2, auged_set3, auged_set4]:
+            auged_set['bboxes'], auged_set['class_labels'] = self.cut_bboxes(
+                auged_set['bboxes'], auged_set['class_labels']
+            )      
+
+        aug_names = {0:"mix up",1:"cut mix",2:"4 mosaic"}
+        print("selected augmentation: {0}".format(aug_names[prob]))
         if prob == 0:
             result = self.mix_up(auged_set1,auged_set2)
         if prob == 1:
             result = self.cut_mix(auged_set1,auged_set2)
         if prob == 2:
-            auged_set3 = self.basic_aug(image=self.get_image(idx_3),bboxes=self.boxes[idx_3],class_labels=self.labels[idx_3])
-            auged_set4 = self.basic_aug(image=self.get_image(idx_4),bboxes=self.boxes[idx_4],class_labels=self.labels[idx_4])
             result = self.four_mosaic([auged_set1,auged_set2,auged_set3,auged_set4])
+        result_img = np.clip(result[0],0,255)
+        print("image type in mix augmetation function : {0}".format(result[0].dtype))
 
-        return {"image":result[0], "bboxes":result[1], "class_labels":result[2]}
+        new_bboxes, new_classLabel = self.cut_bboxes(result[1],result[2])
+        return {"image":np.array(result_img,dtype=np.uint8), "bboxes":new_bboxes, "class_labels":new_classLabel}
     
+    def cut_bboxes(self,bboxes,labels,min_wh=1e-3):
+        new_bboxes = []
+        new_labels = []
+        for bbox, label in zip(bboxes, labels):
+            x_c, y_c, w, h = bbox
+            if (
+                0.0 <= x_c <= 1.0 and
+                0.0 <= y_c <= 1.0 and
+                min_wh <= w <= 1.0 and
+                min_wh <= h <= 1.0
+            ):
+                new_bboxes.append([x_c, y_c, w, h])
+                new_labels.append(label)
+
+        if new_bboxes:
+            new_bboxes = np.clip(np.array(new_bboxes, dtype=np.float32), 0.0, 1.0)
+        else:
+            new_bboxes = np.zeros((0 , 4), dtype=np.float32) 
+        return new_bboxes.tolist(), new_labels
+
     def get_image(self,idx):
         path = os.path.join(self.image_dir, self.img_lst[idx])
         img = cv2.imread(path)
         if img is None or np.prod(img.shape) == 0:
             print('cannot load image from path: ', path)
             sys.exit(-1)        
-        return img[..., ::-1]
-
+        return cv2.cvtColor(img,cv2.COLOR_BGR2RGB)
+    
     def collate_fn(self, batch):
         '''Pad images and encode targets.
 
@@ -154,7 +184,9 @@ class ListDataset(Dataset):
             loc_targets.append(loc_target)
             cls_targets.append(cls_target)
 
-        return inputs, torch.stack(loc_targets), torch.stack(cls_targets)
+        
+
+        return {'image':inputs, 'bboxes':torch.stack(loc_targets), 'class_labels':torch.stack(cls_targets)}
 
     def __len__(self):
         return self.num_samples
@@ -183,12 +215,18 @@ class MixUp:
     def __call__(self, 
                  dataset1:ListDataset,
                  dataset2:ListDataset):
+        print("MIXUP BBOX CHECK")
+        for b in dataset1['bboxes'] + dataset2['bboxes']:
+            print("before cut:", b)
+        print("-"*20)
         img1 = np.array(dataset1['image']) / 255
         img2 = np.array(dataset2['image']) / 255
         mixed_img = (self.alpha * img1 + (1-self.alpha) * img2)
-        mixed_img = np.clip(mixed_img,0,1) 
+        mixed_img = (mixed_img-np.min(mixed_img)) /  (np.max(mixed_img)-np.min(mixed_img))
+        mixed_img *= 255
         mixed_boxes = dataset1['bboxes'] + dataset2['bboxes'] 
         mixed_labels = dataset1['class_labels'] + dataset2['class_labels']
+
 
         return mixed_img, mixed_boxes, mixed_labels
     
@@ -220,10 +258,12 @@ class SimpleMosaic(A.DualTransform):
             img_size = img_sizes[i]
             start_point = start_points[i]
             dataset = dataset_lst[i]
-            resize_img = A.Resize(height=img_size[0],width =img_size[1])
+            resize_img = A.Compose(
+                [A.Resize(height=img_size[0],width =img_size[1])]
+                , bbox_params=A.BboxParams(format='yolo', label_fields=['class_labels']))
             dataset = resize_img(image=dataset["image"],
                                  bboxes = dataset["bboxes"],
-                                 class_label = dataset["class_labels"])
+                                 class_labels = dataset["class_labels"])
             y1, x1 = start_point[0], start_point[1]
             y2, x2 = y1+img_size[0], x1+img_size[1]
             mosaic_img[y1:y2,x1:x2,:] = dataset["image"]
@@ -274,23 +314,30 @@ class Cutmix:
     def __call__(self, 
                  dataset1:ListDataset,
                  dataset2:ListDataset):
+        print("MIXUP BBOX CHECK")
+        for b in dataset1['bboxes'] + dataset2['bboxes']:
+            print("before cut:", b)
+        print("-"*20)
+
         img1 = np.array(dataset1['image'])
         img2 = np.array(dataset2['image'])
 
         
         width_img2 = int(self.size*(np.sqrt(1-self.lamda)))
         height_img2 = width_img2
-        print(width_img2)
+
 
         #random 범위 지정정
         start,end = map(int, [0, self.size-width_img2])
-        print(start,end)
         min_point = min(start,end)
         max_point = max(start,end)
 
         x1,y1 = np.random.randint(min_point,max_point,2,int)
 
-        resize_img = A.Resize(height=height_img2,width =width_img2)
+        resize_img = A.Compose(
+            [A.Resize(height=height_img2,width =width_img2)],
+            bbox_params=A.BboxParams(format='yolo', label_fields=['class_labels'])
+            )
         img2_resize = resize_img(image=dataset2['image'],
                                 bboxes=dataset2['bboxes'],
                                 class_labels=dataset2['class_labels'])
