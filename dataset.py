@@ -75,10 +75,13 @@ class ListDataset(Dataset):
         labels = self.labels[idx]
 
         result = self.basic_aug(image=img,bboxes=boxes,class_labels=labels)
+        print("after basic augmentation")
+        for set_img in result["bboxes"]:
+            print("bboxes in basic augmentation : {0}".format(set_img))    
 
         if self.Transform:
             result = self.mix_augmentation(idx,result)
-        print(result['image'].dtype)
+
         result = self.finish_aug(image=result['image'],bboxes=result['bboxes'],class_labels=result['class_labels'])
         
         #change the list to torch tensor
@@ -113,7 +116,9 @@ class ListDataset(Dataset):
         for auged_set in [auged_set1,auged_set2, auged_set3, auged_set4]:
             auged_set['bboxes'], auged_set['class_labels'] = self.cut_bboxes(
                 auged_set['bboxes'], auged_set['class_labels']
-            )      
+            ) 
+        for set_img in [auged_set1,auged_set2, auged_set3, auged_set4]:
+            print("bboxes in img : {0}".format(set_img['bboxes']))    
 
         aug_names = {0:"mix up",1:"cut mix",2:"4 mosaic"}
         print("selected augmentation: {0}".format(aug_names[prob]))
@@ -246,7 +251,7 @@ class SimpleMosaic(A.DualTransform):
         return ("image_size",)
 
     def __call__(self, dataset_lst,force_apply=False, ):
-
+        print("4mosaic CHECK")
         size = self.image_size
         mosaic_img = np.full((size, size, 3), 114, dtype=np.uint8)
         xc, yc = np.random.randint(size*0.25,size*0.75,2)
@@ -254,26 +259,28 @@ class SimpleMosaic(A.DualTransform):
         img_sizes = [[yc,xc],[size-yc,xc],[yc,size-xc],[size-yc,size-xc]]
         final_bboxes, final_labels = [], []
 
+
         for i in range(4):
             img_size = img_sizes[i]
             start_point = start_points[i]
             dataset = dataset_lst[i]
             resize_img = A.Compose(
                 [A.Resize(height=img_size[0],width =img_size[1])]
-                , bbox_params=A.BboxParams(format='yolo', label_fields=['class_labels']))
+                , bbox_params=A.BboxParams(format='yolo', label_fields=['class_labels'],check_each_transform=False))
             dataset = resize_img(image=dataset["image"],
                                  bboxes = dataset["bboxes"],
                                  class_labels = dataset["class_labels"])
             y1, x1 = start_point[0], start_point[1]
             y2, x2 = y1+img_size[0], x1+img_size[1]
+            
             mosaic_img[y1:y2,x1:x2,:] = dataset["image"]
 
 
-            for bbox, label in zip(dataset["bboxes"],dataset["class_label"]):
+            for bbox, label in zip(dataset["bboxes"],dataset["class_labels"]):
                 x_c, y_c, bw, bh = bbox
 
-                bw *= img_size[1]
-                bh *= img_size[0]
+                bw *= img_size[1] #width
+                bh *= img_size[0] #height
                 x_c = x_c * img_size[1]  + x1
                 y_c = y_c * img_size[0]  + y1
 
@@ -336,7 +343,7 @@ class Cutmix:
 
         resize_img = A.Compose(
             [A.Resize(height=height_img2,width =width_img2)],
-            bbox_params=A.BboxParams(format='yolo', label_fields=['class_labels'])
+            bbox_params=A.BboxParams(format='yolo', label_fields=['class_labels'],check_each_transform=False)
             )
         img2_resize = resize_img(image=dataset2['image'],
                                 bboxes=dataset2['bboxes'],
@@ -392,13 +399,12 @@ class Cutmix:
         new_bboxes = []
         width_img = size[0]
         height_img = size[1]
-        print("size of image x, y= {0}, {1}".format(width_img,height_img))
 
         for box,label in zip(dataset['bboxes'],dataset['class_labels']):
             x, y, w, h = box  # yolo 형식이면
             # 1. YOLO → 절대좌표로 변환
-            abs_x = int(x * width_img)
-            abs_y = int(y * height_img)
+            abs_cx = x * width_img
+            abs_cy = y * height_img
             abs_w = w * width_img
             abs_h = h * height_img
             #print("size of bbox of im2 x, y= {0}, {1}".format(abs_x,abs_y))
@@ -408,8 +414,8 @@ class Cutmix:
             # 2. 이미지 patch가 삽입된 실제 위치로 좌표 이동
             #print("pivot position {0}, {1}".format(position[0],position[1]))
 
-            new_x = (position[0] + abs_x) 
-            new_y = (position[1] + abs_y) 
+            new_x = (position[0] + abs_cx) 
+            new_y = (position[1] + abs_cy) 
             # print("size of move x1, y1= {0}, {1}".format(new_x,new_y))
 
             # 3. 이제 박스를 오리지널 기준으로 
