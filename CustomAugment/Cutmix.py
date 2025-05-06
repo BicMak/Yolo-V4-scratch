@@ -1,7 +1,6 @@
 
 import numpy as np
 import albumentations as A
-from dataset import ListDataset
 from albumentations.pytorch import ToTensorV2
 
 class Cutmix:
@@ -26,8 +25,8 @@ class Cutmix:
         self.size = size
 
     def __call__(self, 
-                 dataset1:ListDataset,
-                 dataset2:ListDataset):
+                 dataset1:"ListDataset",
+                 dataset2:"ListDataset"):
         print("MIXUP BBOX CHECK")
         for b in dataset1['bboxes'] + dataset2['bboxes']:
             print("before cut:", b)
@@ -77,7 +76,7 @@ class Cutmix:
         return img1, mixed_boxes, mixed_labels
 
     def Remove_bbox(self, 
-                    dataset:ListDataset,
+                    dataset:"ListDataset",
                     position:tuple,
                     size:tuple):
         
@@ -99,7 +98,7 @@ class Cutmix:
         return new_bboxes, new_labels
     
     def Move_box(self, 
-                 dataset:ListDataset,
+                 dataset:"ListDataset",
                  position:tuple,
                  size:tuple):
         

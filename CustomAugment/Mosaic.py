@@ -4,14 +4,8 @@ import sys
 import cv2
 import numpy as np
 import torch
-from anchor import DataEncoder
 
-from torch.utils.data import Dataset
-
-from PIL import Image
 import albumentations as A
-import random
-from albumentations.pytorch import ToTensorV2
 
 class SimpleMosaic(A.DualTransform):
     def __init__(self, size=450, always_apply=False, p=1.0):

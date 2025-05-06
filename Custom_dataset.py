@@ -13,25 +13,28 @@ import albumentations as A
 import random
 from albumentations.pytorch import ToTensorV2
 
-from CustomAugment import Cutmix
-from CustomAugment import MixUp
-from CustomAugment import Mosaic
+from CustomAugment.Cutmix import Cutmix
+from CustomAugment.Mixup import MixUp
+from CustomAugment.Mosaic import SimpleMosaic as Mosaic
 
 class ListDataset(Dataset):
+    '''
+    make custom dataset for yolo v4
+
+    Args:
+        root_dir: (str) directory of image
+        list_dir: (str) directory of annotation
+        train: (boolean) train or test.
+        transform: (bool) image transforms.
+        input_size: (int) model input size.
+    '''
     def __init__(self, 
                  image_dir:str, 
                  label_dir:str, 
                  classes, 
                  input_size:int = 450,
                  transform:bool = False):
-        '''
-        Args:
-          root_dir: (str) directory of image
-          list_dir: (str) directory of annotation
-          train: (boolean) train or test.
-          transform: (bool) image transforms.
-          input_size: (int) model input size.
-        '''
+
         def natural_key(s):
             return [int(t) if t.isdigit() else t.lower() for t in re.split(r'(\d+)', s)]
         
@@ -87,7 +90,7 @@ class ListDataset(Dataset):
                          transform:bool = False):
         self.basic_aug = basic_aug
         self.mix_up = MixUp(size= self.input_size, alpha = aug_para["alpha"], prob= aug_para["prob"])
-        self.four_mosaic = Mosaic.SimpleMosaic(size = self.input_size)
+        self.four_mosaic = Mosaic(size = self.input_size)
         self.cut_mix =Cutmix(size = self.input_size,lamda = aug_para["lambda"], prob=aug_para["prob"])
         self.finish_aug = finish_aug
         self.Transform = transform

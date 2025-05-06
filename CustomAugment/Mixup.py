@@ -1,5 +1,4 @@
 import numpy as np
-from dataset import ListDataset
 
 class MixUp:
     '''
@@ -23,8 +22,8 @@ class MixUp:
         self.size = size
 
     def __call__(self, 
-                 dataset1:ListDataset,
-                 dataset2:ListDataset):
+                 dataset1:"ListDataset",
+                 dataset2:"ListDataset"):
         print("MIXUP BBOX CHECK")
         for b in dataset1['bboxes'] + dataset2['bboxes']:
             print("before cut:", b)
