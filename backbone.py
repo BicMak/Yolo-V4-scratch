@@ -214,3 +214,43 @@ class head(nn.Module):
         large = self.conv3_1(large)
 
         return (large,mid,small)   
+    
+class YoloV4Model(nn.Module):
+    """
+    Combine Backbone, Neck, and Head to create a full object detection model (YOLOv4-like).
+    
+    prameters:
+        num_classes (int): Number of classes for object detection.
+    """
+    def __init__(self, 
+                 num_classes:int,
+                 to_vector:bool = False,):
+        super(YoloV4Model, self).__init__()
+        self.backbone = backbone()
+        self.neck = neck()
+        self.head = head(num_classes)
+        self.to_veoctor = to_vector
+        
+    def forward(self, x):
+        P_large, P_mid, P_small = self.backbone(x)
+        Neck_large, Neck_mid, _ = self.neck((P_large, P_mid, P_small))
+        large, mid, small = self.head((Neck_large, Neck_mid, P_small))
+        result = []
+
+        if self.flatten:
+            for detect_box in [large, mid, small]:
+                grid_box = detect_box.permute(0, 2, 3, 1).contiguous()
+                grid_box = grid_box.view(detect_box.size(0), -1, 5+self.num_classes)
+                # [N, anchor_num * (5+C),H,W] (Start)
+                # -> [N,H,W, anchor_num * (5+C)] (after permuate)
+                # -> [N,H*W*anchor_num,(5+C)] (afeter view method)
+                result.append(grid_box)
+            return result[0], result[1], result[2]
+        
+        else:
+            return large, mid, small
+
+        
+            
+
+        

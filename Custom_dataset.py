@@ -38,6 +38,7 @@ class ListDataset(Dataset):
         def natural_key(s):
             return [int(t) if t.isdigit() else t.lower() for t in re.split(r'(\d+)', s)]
         
+        self.encoder = DataEncoder((input_size,input_size),classes=[0,1]) 
         self.image_dir = image_dir
         self.anno_dir = label_dir
         self.img_lst = sorted(os.listdir(self.image_dir),key = natural_key)
@@ -67,7 +68,7 @@ class ListDataset(Dataset):
             self.labels.append(label)
     
     #In YOLOv4, every bounding box must be entirely inside the image.
-    def Clip_yoloformat(self,cx,cy,w,h,eps=1e-6):
+    def Clip_yoloformat(self,cx,cy,w,h,eps=5):
         x1, x2 = np.clip([cx-w/2, cx+w/2],0,1)
         y1, y2 = np.clip([cy-h/2, cy+h/2],0,1)
         new_cx = (x2+x1)/2
@@ -75,7 +76,9 @@ class ListDataset(Dataset):
         new_w = (x2-x1)
         new_h = (y2-y1)
 
-        if new_w < eps or new_h < eps:
+        # Check boxes size, if it is smaller than eps, return None
+        # eps is the minimun length of the boxes
+        if (new_w*self.input_size) < eps or (new_h*self.input_size) < eps:
             return None  # 무효 bbox로 간주
 
         return [new_cx,new_cy,new_w,new_h]
@@ -204,17 +207,18 @@ class ListDataset(Dataset):
         boxes = [x['bboxes'] for x in batch]
         labels = [x['class_labels'] for x in batch]
 
-        h = w = self.input_size
-        num_imgs = len(imgs)
-        inputs = torch.zeros(num_imgs, 3, w, h)
+
+        inputs = []
         loc_targets = []
         cls_targets = []
 
-        for i in range(num_imgs):
-            inputs[i] = imgs[i]
-            loc_target, cls_target = self.encoder.encoder(boxes[i], labels[i])
+        for img, box, label in zip(imgs, boxes, labels):
+            inputs.append(img)
+            loc_target, cls_target = self.encoder.encoder(box, label)
             loc_targets.append(loc_target)
             cls_targets.append(cls_target)
+
+        inputs = torch.stack(inputs, dim=0).float()
 
         
 
@@ -222,3 +226,4 @@ class ListDataset(Dataset):
 
     def __len__(self):
         return self.num_samples
+    

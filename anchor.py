@@ -30,14 +30,16 @@ class DataEncoder:
                  input_size:tuple,
                  classes:list,
                  anchor_ratio:list = [0.5, 1, 1.5],
-                 anchor_areas:list = [208*208,104*104,26*26],
+                 anchor_areas:list = [208*208,104*104,20*20],
                  fm_lst:list = [13,26,52],
                  scale:list = [1],
+                 normalize:bool = True
                  ):
         self.input_size = input_size
         self.anchor_areas = anchor_areas
         self.aspect_ratios = anchor_ratio
         self.scales = scale
+        self.normalize = normalize
         num_fms = len(self.anchor_areas)
         fm_sizes = fm_lst
         self.anchor_boxes = []
@@ -80,17 +82,53 @@ class DataEncoder:
             result = torch.stack([x1,y1,x2,y2],dim=1)
             grid.append(result)  # [N, 4]
 
-        grid = torch.stack(grid,dim=1)
-        return grid.view(-1,4)
 
-    def encoder(self,boxes,classes,iou_threshold=0.5):
-        iou = self.cal_iou(boxes,self.anchor_boxes)
+        # Normalize anchor boxes to [0, 1] range to match YOLO label format
+        # This ensures anchors and GT boxes are in the same coordinate system.
+        grid = torch.stack(grid,dim=1).view(-1,4)
+        if self.normalize:
+            grid =  grid / torch.tensor([self.input_size[1], self.input_size[0], 
+                                        self.input_size[1], self.input_size[0]], 
+                                        dtype=torch.float32)
+        return grid
+
+
+    #boxes를 yolo format으로 설정했다면 corner format으로 변경해서 계산해야됨
+
+    def encoder(self,boxes,classes,iou_threshold=0.6):
+        if boxes.shape[0] == 0:
+            loc_target = torch.zeros((self.anchor_boxes.shape[0],4),dtype=torch.float32)
+            cls_target = torch.zeros((self.anchor_boxes.shape[0]),dtype=torch.int64)
+            return loc_target,cls_target
+
+
+        xyxy_boxes = self.yolo_to_xyxy(boxes)
+        iou = self.cal_iou(xyxy_boxes,self.anchor_boxes)
         iou, ids = iou.max(dim=1)
         loc_target = self.loc_offset_cal(boxes[ids],self.anchor_boxes)
+        loc_target = self.xyxy_to_yolo(loc_target)
         cls_target = classes[ids]+1
         cls_target[iou < iou_threshold] = -1 #ignore
         cls_target[iou < (iou_threshold-0.1)] = 0 #backgroud
         return loc_target,cls_target
+    
+    def yolo_to_xyxy(self,bbox:torch.tensor):  # (4,) -> (1, 4)
+
+        
+        cx, cy, w, h = bbox[:, 0], bbox[:, 1], bbox[:, 2], bbox[:, 3]
+        x1 = cx - w / 2
+        y1 = cy - h / 2
+        x2 = cx + w / 2
+        y2 = cy + h / 2
+        return torch.stack([x1, y1, x2, y2], dim=1)  
+    
+    def xyxy_to_yolo(self,bbox:torch.tensor):
+        x1, y1, x2, y2 = bbox[:, 0], bbox[:, 1], bbox[:, 2], bbox[:, 3]
+        cx = (x2+x1) / 2
+        cy = (y2+y1) / 2
+        w = (x2-x1) 
+        h = (y2-y1) 
+        return torch.stack([cx, cy, w, h], dim=1)
 
     def cal_iou(self,boxes,anchor_box):
         p1 = torch.max(anchor_box[:,None,:2],boxes[:,:2])
