@@ -5,7 +5,7 @@ from dataclasses import dataclass
 class dataset_config:
     image_dir:str = "dataset/image/"
     label_dir:str = "dataset/label/"
-    image_size:int = 450
+    image_size:int = 448
     bboxes_format:str = "yolo"
     classes:tuple = ('NG','OK')
 

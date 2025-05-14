@@ -102,20 +102,25 @@ class backbone(nn.Module):
 
     def forward(self,x):
         x = self.layer_sequence(x)
+        print(f"backbone output : {[i.shape for i in x]}")
 
         route_1 = x[3]
         route_2 = x[4]
         route_3 = x[5]
-
+        
         route_3 = self.bt_neck1(route_3)
         route_3 = self.SPP(route_3)
         route_3 = self.bt_neck2(route_3)
         P_large = route_3
 
-        #--------------------------------------------
+        #--------------------------------------------+
+        print(f"P_large_output : {route_3.shape}")
         route_3 = self.conv1(route_3)
         route_3 = F.interpolate(route_3,scale_factor=2,mode ='nearest')
+        print(f"route_3 interpolation  : {route_3.shape}")
+        print(f"before route_2  : {route_2.shape}")
         route_2 = self.conv1_1(route_2)
+        print(f"after route_2  : {route_2.shape}")
 
         route_2 = torch.cat([route_2,route_3],dim = 1)
         route_2 = self.bt_neck3(route_2)
@@ -230,6 +235,7 @@ class YoloV4Model(nn.Module):
         self.neck = neck()
         self.head = head(num_classes)
         self.to_veoctor = to_vector
+        self.num_classes = num_classes
         
     def forward(self, x):
         P_large, P_mid, P_small = self.backbone(x)
@@ -237,7 +243,8 @@ class YoloV4Model(nn.Module):
         large, mid, small = self.head((Neck_large, Neck_mid, P_small))
         result = []
 
-        if self.flatten:
+
+        if self.to_veoctor:
             for detect_box in [large, mid, small]:
                 grid_box = detect_box.permute(0, 2, 3, 1).contiguous()
                 grid_box = grid_box.view(detect_box.size(0), -1, 5+self.num_classes)

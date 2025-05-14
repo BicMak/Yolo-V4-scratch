@@ -65,6 +65,8 @@ class DataEncoder:
                 anchor.append([width,height])
         return anchor
 
+    # Need to machine with CNN output layer
+    # 정사각행렬 이면 굳이 CNN output layer에 맞출 필요 없음
     def generate_anchor_grid(self,input_size,anchor_areas,fm_size,anchors):
         grid_size = round(input_size[0]/fm_size)
         x_grid = torch.arange(0,fm_size) * fm_size
@@ -111,10 +113,68 @@ class DataEncoder:
         cls_target[iou < iou_threshold] = -1 #ignore
         cls_target[iou < (iou_threshold-0.1)] = 0 #backgroud
         return loc_target,cls_target
-    
-    def yolo_to_xyxy(self,bbox:torch.tensor):  # (4,) -> (1, 4)
 
-        
+    def decoder(self,pred,iou_threshold=0.6):
+        # 1. pred_offset를 박스와 라벨로 분리
+        # anchor는 conner format으로 되어있음
+        # anchor을 yolo format으로 변경해야함
+        pred_offsets = pred[:,:,:4]
+        pred_label = pred[:,:,4:]
+        anchors = self.xyxy_to_yolo(self.anchor_boxes)
+        decoded_boxes = []
+
+        for pred_offset,pred_label in zip(pred_offsets,pred_label):
+
+            # 3. pred_offset_box를 앵커와 비교해서 절대위치로 변환
+            pred_boxes = self.offset_to_box(pred_offset,anchors)
+            idx = pred_label[:,0] > iou_threshold
+            pred_boxes = pred_boxes[idx]
+            pred_label = pred_label[idx]
+            result = torch.cat([pred_boxes,pred_label],dim=1)
+            filtered_result = self.non_max_suppression(result, pred_label[:,0])
+            decoded_boxes.append(filtered_result)
+        return decoded_boxes
+
+    def non_max_suppression(self,
+                            pred:torch.tensor, 
+                            nms_threshold:float=0.4)-> torch.tensor:
+        # pred : (N, 5) -> (x1,y1,x2,y2,score)
+        nms_boxes = []
+        _ , sorted_indices = torch.sort(pred[:, 4], descending=True)
+        sorted_pred = pred[sorted_indices]
+
+
+        while sorted_pred.shape[0] > 0:
+            top_box = sorted_pred[0, :4]
+            top_score = sorted_pred[0, 4]
+            top_class = sorted_pred[0, 5:]
+
+            nms_boxes.append(torch.cat([top_box, top_score,top_class]))  # Append the box to nms_boxes
+
+            iou = self.cal_iou(sorted_pred[1:,:],top_box)
+            filtered_indices = iou < nms_threshold
+            sorted_pred = sorted_pred[1:][filtered_indices]
+
+        nms_boxes = torch.stack(nms_boxes, dim=0)
+        return nms_boxes
+
+    def offset_to_box(self,offsets, anchors):
+        # anchors는 yolo format으로 컨버젼 해서 입력되고있음
+        center_offsets = offsets[:, :2]
+        box_offsets = offsets[:, 2:]
+        anchor_wh = anchors[:, :2]
+        anchor_ctr = anchors[:, :2]
+
+        box_center = anchor_ctr+ center_offsets*anchor_wh
+        box_size = torch.exp(box_offsets) * anchor_wh
+
+        return torch.cat([box_center,box_size],dim = 1)
+
+
+
+
+
+    def yolo_to_xyxy(self,bbox:torch.tensor):  # (4,) -> (1, 4)
         cx, cy, w, h = bbox[:, 0], bbox[:, 1], bbox[:, 2], bbox[:, 3]
         x1 = cx - w / 2
         y1 = cy - h / 2
