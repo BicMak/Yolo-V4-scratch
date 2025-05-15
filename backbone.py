@@ -242,7 +242,7 @@ class YoloV4Model(nn.Module):
         Neck_large, Neck_mid, _ = self.neck((P_large, P_mid, P_small))
         large, mid, small = self.head((Neck_large, Neck_mid, P_small))
         result = []
-
+        print(f"large : {large.shape}, mid : {mid.shape}, small : {small.shape}")
 
         if self.to_veoctor:
             for detect_box in [large, mid, small]:

@@ -31,7 +31,7 @@ class DataEncoder:
                  classes:list,
                  anchor_ratio:list = [0.5, 1, 1.5],
                  anchor_areas:list = [208*208,104*104,20*20],
-                 fm_lst:list = [13,26,52],
+                 fm_lst:list = [14,28,56],
                  scale:list = [1],
                  normalize:bool = True
                  ):
@@ -114,7 +114,10 @@ class DataEncoder:
         cls_target[iou < (iou_threshold-0.1)] = 0 #backgroud
         return loc_target,cls_target
 
-    def decoder(self,pred,iou_threshold=0.6):
+    def decoder(self,
+                pred:torch.tensor,
+                iou_threshold:float=0.6,
+                class_threshold:float=0.5)-> list:
         # 1. pred_offset를 박스와 라벨로 분리
         # anchor는 conner format으로 되어있음
         # anchor을 yolo format으로 변경해야함
@@ -143,7 +146,6 @@ class DataEncoder:
         _ , sorted_indices = torch.sort(pred[:, 4], descending=True)
         sorted_pred = pred[sorted_indices]
 
-
         while sorted_pred.shape[0] > 0:
             top_box = sorted_pred[0, :4]
             top_score = sorted_pred[0, 4]
@@ -169,10 +171,6 @@ class DataEncoder:
         box_size = torch.exp(box_offsets) * anchor_wh
 
         return torch.cat([box_center,box_size],dim = 1)
-
-
-
-
 
     def yolo_to_xyxy(self,bbox:torch.tensor):  # (4,) -> (1, 4)
         cx, cy, w, h = bbox[:, 0], bbox[:, 1], bbox[:, 2], bbox[:, 3]

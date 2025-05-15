@@ -32,7 +32,7 @@ class ListDataset(Dataset):
                  image_dir:str, 
                  label_dir:str, 
                  classes, 
-                 input_size:int = 450,
+                 input_size:int = 448,
                  transform:bool = False):
 
         def natural_key(s):
