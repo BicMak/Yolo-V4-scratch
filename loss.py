@@ -38,6 +38,10 @@ class DetectionLoss(nn.Module):
 
         cls_loss = self.compute_classification_loss(cls_preds, cls_targets)
 
+        print(f"box_loss : {box_loss.shape}")
+        print(f"obj_loss : {obj_loss.shape}")
+        print(f"cls_loss : {cls_loss.shape}")
+
         # 4. Total Loss (가중치 조절하고 싶으면 여기서 weight 줘도 됨)
         total_loss = box_loss + obj_loss + cls_loss
 
@@ -57,11 +61,19 @@ class DetectionLoss(nn.Module):
             target_obj: [B, N, 1] 각 anchor에 대해 GT와의 IoU (최대값) -> Encoding 에서 획득한걸로 봐야될듯?
 
         """
-        obj_target = torch.where(target_obj > 0, torch.tensor(1), torch.tensor(0))   # GT와 매칭: 1, 나머지: 0
+        
+        
+        #
+        obj_target = torch.where(target_obj > 0, 
+                                 torch.tensor(1,dtype=torch.float32), 
+                                 torch.tensor(0,dtype=torch.float32))   # GT와 매칭: 1, 나머지: 0
+
+        
+        #F.Binary_contropy_with_logits는 입력으로 두개의 텐서가 모두 float로 받아야됨됨
         obj_loss = F.binary_cross_entropy_with_logits(pred_obj, obj_target, reduction='none')
         obj_loss = obj_loss * obj_target  # 무시된 것들에 대해 loss 줄임
 
-        return obj_loss.mean()
+        return obj_loss
 
     def compute_classification_loss(self,pred_cls, gt_cls):
         """
@@ -70,29 +82,38 @@ class DetectionLoss(nn.Module):
 
         N = matched anchor 수 (positive only)
         """
-        cls_target = F.one_hot(gt_cls, num_classes=self.num_classes+2)
-        target_obj = cls_target[:,:,2:]
+
+        gt_cls = torch.clip(gt_cls, min=0)
+        gt_cls = gt_cls.long()  # Ensure gt_cls is float for BCE loss
+        
+        print(f"gt_cls : {gt_cls.shape}")
+        print(f"gt_cls_max : {gt_cls.max()}")
+        print(f"gt_cls_min : {gt_cls.min()}")
+
+        
+        cls_target = F.one_hot(gt_cls, num_classes=self.num_classes+1)
+        print(f"cls_target : {cls_target.shape}")
+        target_obj = (cls_target[:,:,1:]).float()
+        print(f"target_obj : {target_obj.shape}")
+
+        #target_mask 계산 고쳐야됨 
         target_mask = (gt_cls <= 0).float()  #gt_cls가 0보다 같거나 작은걸 0으로바꿔줌줌
         cls_loss = F.binary_cross_entropy_with_logits(pred_cls, target_obj, reduction='mean')
-        return (cls_loss* target_mask).mean()
+        return cls_loss* target_mask
 
-    
+    #Ciou 값안나온다 다시봐야됨
     def cal_ciou(self,gt_loc,pred_loc):
         #cal_d_loss
         iou = self.cal_iou(gt_loc,pred_loc) # 1-Iou
         c = self.cal_EuclidDist(gt_loc,pred_loc)
         d = self.cal_reclength(gt_loc,pred_loc)
-        print(f"iou shape: {iou.shape}")
-        print(f"c shape: {c.shape}")
-        print(f"d shape: {d.shape}")
 
         # cal_c)loss value
         v, alpha = self.cal_v_alpha(gt_loc,pred_loc,iou)
-        print(f"v shape: {v.shape}")
-        print(f"alpha shape: {alpha.shape}")
 
         result= 1- iou + (c/d)**2 + (alpha*v)
-        return result.mean()
+        print(f"result shape: {result}")
+        return result
 
     def yolo_to_xyxy(self,box):
         x1 = box[:,:,0] - box[:,:,2]/2
