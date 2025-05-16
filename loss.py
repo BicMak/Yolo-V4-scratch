@@ -38,10 +38,6 @@ class DetectionLoss(nn.Module):
 
         cls_loss = self.compute_classification_loss(cls_preds, cls_targets)
 
-        print(f"box_loss : {box_loss.shape}")
-        print(f"obj_loss : {obj_loss.shape}")
-        print(f"cls_loss : {cls_loss.shape}")
-
         # 4. Total Loss (가중치 조절하고 싶으면 여기서 weight 줘도 됨)
         total_loss = box_loss + obj_loss + cls_loss
 
@@ -73,7 +69,7 @@ class DetectionLoss(nn.Module):
         obj_loss = F.binary_cross_entropy_with_logits(pred_obj, obj_target, reduction='none')
         obj_loss = obj_loss * obj_target  # 무시된 것들에 대해 loss 줄임
 
-        return obj_loss
+        return obj_loss.mean()
 
     def compute_classification_loss(self,pred_cls, gt_cls):
         """
@@ -86,20 +82,14 @@ class DetectionLoss(nn.Module):
         gt_cls = torch.clip(gt_cls, min=0)
         gt_cls = gt_cls.long()  # Ensure gt_cls is float for BCE loss
         
-        print(f"gt_cls : {gt_cls.shape}")
-        print(f"gt_cls_max : {gt_cls.max()}")
-        print(f"gt_cls_min : {gt_cls.min()}")
-
-        
         cls_target = F.one_hot(gt_cls, num_classes=self.num_classes+1)
-        print(f"cls_target : {cls_target.shape}")
         target_obj = (cls_target[:,:,1:]).float()
-        print(f"target_obj : {target_obj.shape}")
 
         #target_mask 계산 고쳐야됨 
         target_mask = (gt_cls <= 0).float()  #gt_cls가 0보다 같거나 작은걸 0으로바꿔줌줌
         cls_loss = F.binary_cross_entropy_with_logits(pred_cls, target_obj, reduction='mean')
-        return cls_loss* target_mask
+        result = cls_loss * target_mask
+        return result.mean()  # 평균으로 바꿔줌
 
     #Ciou 값안나온다 다시봐야됨
     def cal_ciou(self,gt_loc,pred_loc):
@@ -111,9 +101,8 @@ class DetectionLoss(nn.Module):
         # cal_c)loss value
         v, alpha = self.cal_v_alpha(gt_loc,pred_loc,iou)
 
-        result= 1- iou + (c/d)**2 + (alpha*v)
-        print(f"result shape: {result}")
-        return result
+        result= 1-iou + (c/d)**2 + (alpha*v)
+        return result.mean()
 
     def yolo_to_xyxy(self,box):
         x1 = box[:,:,0] - box[:,:,2]/2
@@ -129,10 +118,11 @@ class DetectionLoss(nn.Module):
         p2 = torch.min(gt_box[:,:,2:],pred_box[:,:,2:])
 
         inter = torch.prod((p2-p1+1).clamp(0),dim=2)
-        gt_area = torch.prod(gt_box[:,:, 2:] - gt_box[:,:, :2] + 1, dim =2)
-        anchor_area = torch.prod(pred_box[:,:, 2:] - pred_box[:,:, :2] + 1, dim=2)
+        gt_area = torch.prod(torch.abs(gt_box[:,:, 2:] - gt_box[:,:, :2]+ 1) , dim =2)
+        anchor_area = torch.prod(torch.abs(pred_box[:,:, 2:] - pred_box[:,:, :2]+ 1) , dim=2)
 
-        iou_loss = inter / (gt_area+anchor_area - inter)
+        epsilion = 1e-7
+        iou_loss = inter / (gt_area+anchor_area - inter+ epsilion)
         return iou_loss
 
     def cal_EuclidDist(self,gt_box,pred_box):       
@@ -159,11 +149,11 @@ class DetectionLoss(nn.Module):
         w_pred = pred_boxes[:, :, 2]
         h_pred = pred_boxes[:, :, 3]
 
-        atan_gt = torch.atan(w_gt / h_gt)
-        atan_pred = torch.atan(w_pred / h_pred)
+        esilion = 1e-7
+        atan_gt = torch.atan(w_gt / (h_gt+esilion))
+        atan_pred = torch.atan(w_pred / (h_pred+esilion))
         
         v = (4 / (math.pi ** 2)) * (atan_gt - atan_pred).pow(2)
-        print(f"v shape: {v.shape}")
-        alpha = v / (1 - iou + v + 1e-7)  # small epsilon added for numerical stability
+        alpha = v / (1 - iou + v + esilion)  # small epsilon added for numerical stability
 
         return v, alpha 

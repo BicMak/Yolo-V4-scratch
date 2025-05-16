@@ -102,7 +102,6 @@ class backbone(nn.Module):
 
     def forward(self,x):
         x = self.layer_sequence(x)
-        print(f"backbone output : {[i.shape for i in x]}")
 
         route_1 = x[3]
         route_2 = x[4]
@@ -114,13 +113,9 @@ class backbone(nn.Module):
         P_large = route_3
 
         #--------------------------------------------+
-        print(f"P_large_output : {route_3.shape}")
         route_3 = self.conv1(route_3)
         route_3 = F.interpolate(route_3,scale_factor=2,mode ='nearest')
-        print(f"route_3 interpolation  : {route_3.shape}")
-        print(f"before route_2  : {route_2.shape}")
         route_2 = self.conv1_1(route_2)
-        print(f"after route_2  : {route_2.shape}")
 
         route_2 = torch.cat([route_2,route_3],dim = 1)
         route_2 = self.bt_neck3(route_2)
@@ -167,7 +162,6 @@ class neck(nn.Module):
         x_in = torch.cat([x[1],x_in],dim = 1)
         x_in = self.bt_neck1(x_in)
         Neck_mid = x_in
-        print(Neck_mid.shape)
 
         x_in = self.conv2(x_in)
         x_in = torch.cat([x[0],x_in],dim = 1)
@@ -242,7 +236,6 @@ class YoloV4Model(nn.Module):
         Neck_large, Neck_mid, _ = self.neck((P_large, P_mid, P_small))
         large, mid, small = self.head((Neck_large, Neck_mid, P_small))
         result = []
-        print(f"large : {large.shape}, mid : {mid.shape}, small : {small.shape}")
 
         if self.to_veoctor:
             for detect_box in [large, mid, small]:
