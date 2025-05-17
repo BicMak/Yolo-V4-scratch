@@ -4,9 +4,14 @@ import torch.nn.functional as F
 import math
 
 class DetectionLoss(nn.Module):
-    def __init__(self, num_classes=2):
+    def __init__(self, 
+                 num_classes:int=2,
+                 weight_lst:list=[1,1,1]):
         super().__init__()
         self.num_classes = num_classes
+        self.iou_normalizer = weight_lst[0]
+        self.obj_normalizer = weight_lst[1]
+        self.cls_normalizer = weight_lst[2]
 
     def forward(self, 
                 preds:torch.tensor,
@@ -39,7 +44,9 @@ class DetectionLoss(nn.Module):
         cls_loss = self.compute_classification_loss(cls_preds, cls_targets)
 
         # 4. Total Loss (가중치 조절하고 싶으면 여기서 weight 줘도 됨)
-        total_loss = box_loss + obj_loss + cls_loss
+        total_loss = (self.iou_normalizer*box_loss 
+                      + self.obj_normalizer*obj_loss
+                      + self.cls_normalizer*cls_loss)
 
         return {
             'total': total_loss,
@@ -58,8 +65,6 @@ class DetectionLoss(nn.Module):
 
         """
         
-        
-        #
         obj_target = torch.where(target_obj > 0, 
                                  torch.tensor(1,dtype=torch.float32), 
                                  torch.tensor(0,dtype=torch.float32))   # GT와 매칭: 1, 나머지: 0
@@ -94,14 +99,24 @@ class DetectionLoss(nn.Module):
     #Ciou 값안나온다 다시봐야됨
     def cal_ciou(self,gt_loc,pred_loc):
         #cal_d_loss
+
+        #iou는 여집합/합집합이니깐 절대로 1을 넘을 수 없음음
         iou = self.cal_iou(gt_loc,pred_loc) # 1-Iou
+
+        #유클리디안 거리도 값으로는 특이할건없어 보임 하지만 노말라이즈된 값으로 학습하는데
+        #저런거면 다시 한번 확인해볼 필요는 있을듯듯
         c = self.cal_EuclidDist(gt_loc,pred_loc)
+
+        #얘는 잘모르겠네네
         d = self.cal_reclength(gt_loc,pred_loc)
 
         # cal_c)loss value
         v, alpha = self.cal_v_alpha(gt_loc,pred_loc,iou)
 
-        result= 1-iou + (c/d)**2 + (alpha*v)
+        esilion = 1e-7
+        result= 1-iou + (c**2)/((d**2)+esilion) + (alpha*v)
+        #Result 연산에서 값이 발산해서 NAN값이 나옴 
+        #근데 그러면 이걸 어떻게 해야되는거지? 연산문제인가?
         return result.mean()
 
     def yolo_to_xyxy(self,box):

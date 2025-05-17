@@ -36,6 +36,9 @@ class OptimizerConfig:
     weight_decay:float = 0.0005  # optimizer weight decay 5e-4  # warmup epochs (fractions ok)
     warmup_momentum:float = 0.8  # warmup initial momentum
     warmup_bias_lr:float = 0.1  # warmup initial bias lr
+    iou_normalizer:float = 0.05  # iou normalizer
+    obj_normalizer:float = 4.0
+    cls_normalizer:float = 0.5
 
 @dataclass
 class training_config:
@@ -44,4 +47,5 @@ class training_config:
     save_period:int = 1
     save_dir:str = "weights/"
     device:str = "cuda"
+    lr_sheduler:bool = True
 
